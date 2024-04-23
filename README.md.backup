@@ -17,8 +17,6 @@
 
 ![](Images/2024-04-16_22-05.png)
 
-![](Images/2024
-
 **Задание 3**
 
 Значения в файле vms_platform.tf:
@@ -40,11 +38,11 @@ variable "vm_web_instance" {
 
 
 
-variable "cloud_id" {
-  type        = string
-  default = "b1gu9qfogo41rud4orsq"
-  description = "https://cloud.yandex.ru/docs/resource-manager/operations/cloud/get-id"
-}
+#variable "cloud_id" {
+#  type        = string
+#  default = "b1gu9qfogo41rud4orsq"
+#  description = "https://cloud.yandex.ru/docs/resource-manager/operations/cloud/get-id"
+#}
 
 variable "folder_id" {
   type        = string
@@ -69,10 +67,12 @@ variable "vpc_name" {
   description = "VPC network & subnet name"
 }
 
+
 ###ssh vars
 
 variable "vms_ssh_root_key" {
-  default     = "ssh-rsa My_key"
+  type        = string
+  default     = "ssh-rsa ADAQABAAABgQDSdTKqtO6iTLkhCuP79A60zNsFacumeJkboCzJgHWX3Dd7d510IcjQZZbpi9rtNszwG8V2wf6+3d6BbhvltbOEaVTAk+WEAb8v3fNLyJzEzl5qMMmD9rhQVA2AFEMJiUfVts8NLAqB9JR6q+VfOB1Il>
   description = "ssh-keygen -t ed25519"
 }
 
@@ -82,6 +82,20 @@ variable "vm_db_image" {
   default     = "ubuntu-2004-lts"
   description = "my image"
 }
+variable "vpc_db_name" {
+  type        = string
+  default     = "default"
+  description = "VPC network & subnet name"
+}
+
+variable "default_db_cidr" {
+  type        = list(string)
+  default     = ["10.0.2.0/24"]
+  description = "https://cloud.yandex.ru/docs/vpc/operations/subnet-create"
+}
+
+
+
 
 variable "vm_db_instance" {
   type        = string
@@ -100,5 +114,254 @@ variable "vms_db_ssh_root_key" {
   default     = "<your_ssh_ed25519_key>"
   description = "ssh-keygen -t ed25519"
 }
- ```
+
+```
+
+
+Значения в файле main.tf:
+```
+resource "yandex_vpc_network" "develop" {
+  name = var.vpc_name
+}
+
+#Сети
+
+
+resource "yandex_vpc_subnet" "develop" {
+  name           = var.vpc_name
+  zone           = var.default_zone
+  network_id     = yandex_vpc_network.develop.id
+  v4_cidr_blocks = var.default_cidr
+}
+
+resource "yandex_vpc_subnet" "develop_db" {
+  name           = var.vpc_db_name
+  zone           = var.vm_db_zone
+  network_id     = yandex_vpc_network.develop.id
+  v4_cidr_blocks = var.default_db_cidr
+}
+
+
+
+data "yandex_compute_image" "ubuntu" {
+  family = var.vm_web_image
+}
+  resource "yandex_compute_instance" "platform" {
+  name = var.vm_web_instance
+  zone = var.default_zone
+  platform_id = "standard-v2"
+  resources {
+    cores         = 2
+    memory        = 1
+    core_fraction = 5
+  }
+  boot_disk {
+    initialize_params {
+      image_id = data.yandex_compute_image.ubuntu.image_id
+    }
+  }
+  scheduling_policy {
+    preemptible = true
+  }
+  network_interface {
+    subnet_id = yandex_vpc_subnet.develop.id
+    nat       = true
+  }
+
+  metadata = {
+    serial-port-enable = 1
+    ssh-keys           = "ubuntu:${var.vms_ssh_root_key}"
+  }
+
+}
+
+#dB
+data "yandex_compute_image" "db" {
+  family = var.vm_db_image
+}
+}
+  resource "yandex_compute_instance" "vm-db" {
+  name = var.vm_db_instance
+
+  zone = var.vm_db_zone
+  platform_id = "standard-v2"
+  resources {
+    cores         = 2
+    memory        = 2
+    core_fraction = 20
+  }
+  boot_disk {
+    initialize_params {
+      image_id = data.yandex_compute_image.ubuntu.image_id
+    }
+  }
+  scheduling_policy {
+    preemptible = true
+  }
+  network_interface {
+    subnet_id = yandex_vpc_subnet.develop_db.id
+    nat       = true
+  }
+
+  metadata = {
+    serial-port-enable = 1
+    ssh-keys           = "ubuntu:${var.vms_ssh_root_key}"
+  }
+
+}
+```
+
+![](Images/120305.jpg)
+
+
+Задание 4
+В качестве решения приложите вывод значений ip-адресов команды terraform output.
+
+```
+root@rus-6tbci:/netologia/ter# terraform output
+db_instance_info = {
+  "external_ip" = "158.160.86.86"
+  "fqdn" = "epdi0oeq7rt9uq4n6612.auto.internal"
+  "instance_name" = "netology-develop-platform-db"
+}
+ubuntu = "fd8j5rqgg1bktk9q4ved"
+web_instance_info = {
+  "external_ip" = "51.250.71.166"
+  "fqdn" = "fhmjsv5s9i0jt9jhds02.auto.internal"
+  "instance_name" = "netology-develop-platform-web"
+}
+root@ruv-6tbci:/netologia/ter#
+```
+
+Задание 5
+В файле locals.tf опишите в одном local-блоке имя каждой ВМ, используйте интерполяцию ${..} с НЕСКОЛЬКИМИ переменными по примеру из лекции.
+
+locals.tf
+```
+locals {
+  vm_prefix_db = "netology-develop-platform-db"
+  vm_prefix_web = "netology-develop-platform-web"
+
+  vm_count_db = 1
+  vm_count_web = 2
+
+  vm_names = {
+    db = "${local.vm_prefix_db}-${local.vm_count_db}"
+    web = "${local.vm_prefix_web}-${local.vm_count_web}"
+  }
+}
+```
+
+main.tf
+
+```
+data "yandex_compute_image" "ubuntu" {
+  family = var.vm_web_image
+}
+  resource "yandex_compute_instance" "platform" {
+ #name = var.vm_web_instance
+  name = local.vm_names["web"]
+
+.......
+
+#dB
+data "yandex_compute_image" "db" {
+  family = var.vm_db_image
+}
+  resource "yandex_compute_instance" "vm-db" {
+  #name = var.vm_db_instance
+  name = local.vm_names["db"]
+......
+```
+
+![](Images/123432.jpg)
+
+
+Задани 6
+
+1
+
+```
+variable "vms_resources" {
+  description = "Resources for all vms"
+  type        = map(map(number))
+  default     = {
+    vm_web_resources = {
+      cores         = 2
+      memory        = 1
+      core_fraction = 5
+    }
+    vm_db_resources = {
+      cores         = 2
+      memory        = 2
+      core_fraction = 20
+    }
+  }
+}
+```
+
+2
+```
+variable "vms_resources" {
+  description = "Resources for all vms"
+  type        = map(map(number))
+  default     = {
+    vm_web_resources = {
+      cores         = 2
+      memory        = 1
+      core_fraction = 5
+    }
+    vm_db_resources = {
+      cores         = 2
+      memory        = 2
+      core_fraction = 20
+    }
+  }
+}
+ 
+ ................
+ 
+variable "vms_resources" {
+  description = "Resources for all vms"
+  type        = map(map(number))
+  default     = {
+    vm_web_resources = {
+      cores         = 2
+      memory        = 1
+      core_fraction = 5
+    }
+    vm_db_resources = {
+      cores         = 2
+      memory        = 2
+      core_fraction = 20
+    }
+  }
+}
+```
+
+3
+```
+variable "common_metadata" {
+  description = "metadata for all vms"
+  type        = map(string)
+  default     = {
+    serial-port-enable = "1"
+    ssh-keys          = "ubuntu:ssh-ed25519 AAAAC3NzaC1lZD............."
+  }
+}
+```
+
+```
+
+ # metadata = {
+ #   serial-port-enable = 1
+ #   ssh-keys           = "ubuntu:${var.vms_ssh_root_key}"
+ # }
+ metadata = var.common_metadata
+
+}
+
+```
+
+terraform plan
 
